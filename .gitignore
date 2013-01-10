@@ -1,2 +1,6 @@
 
 test.wav
+
+.DS_Store
+
+*.tmp

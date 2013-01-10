@@ -12,34 +12,35 @@
 
 use strict;
 use Getopt::Long;
+use Time::localtime;
 
+#	constants
 
-### Basic steps
-###		open input file
-###		read/parse through the header
-###		confirm it is six channels
-###		queue file to start of audio data
-###		create six new raw pcm (temp) files
-###		de-interleave out to temp files
-###		wrap temp files to mono WAVE files
-###		delete temp files
-###
-###	all of these steps I've done in separate scripts before
-###	but I want to combine the functionality into one here
+use constant NUM_STREAMS	=>	6;
 
 #	variables
 
-my ( $input_param, $output_param, $debug_param, $help_param, $version_param );
-my ( $file_size );
+my ( $input_param, $output_param, $channels_param, $debug_param, $help_param, $version_param );
+my ( $file_size, @channels );
 my ( $header, $chunk_id, $chunk_size, $format );
 my ( $sub_chunk_1_id, $sub_chunk_1_size );
 my ( $audio_format, $num_channels, $sample_rate, $byte_rate, $block_align, $bits_per_sample );
 my ( $sub_chunk_2_id, $sub_chunk_2_size );
+my ( @temp_file_names, @file_names, @file_handles );
+my ( $base_name, $extension );
+my @MONTHS = qw( 01 02 03 04 05 06 07 08 09 10 11 12 );
+my @DAYS = qw( 00 01 02 03 04 05 06 07 08 09 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31 );
+my @HOURS = qw( 00 01 02 03 04 05 06 07 08 09 10 11 12 13 14 15 16 17 18 19 20 21 22 23 );
+my @MINUTES = qw ( 00 01 02 03 04 05 06 07 08 09 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31 32 33 34 35 36 37 38 39 40 41 42 43 44 45 46 47 48 49 50 51 52 53 54 55 56 57 58 59 60 );
+my @SECONDS = qw( 00 01 02 03 04 05 06 07 08 09 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31 32 33 34 35 36 37 38 39 40 41 42 43 44 45 46 47 48 49 50 51 52 53 54 55 56 57 58 59 60 );
+
+my $temp_date = localtime()->year + 1900 . $MONTHS[localtime()->mon] . $DAYS[localtime()->mday] . $HOURS[localtime()->hour] . $MINUTES[localtime()->min] . $SECONDS[localtime()->sec];
 
 #	get parameters
 
 GetOptions(	'input|i=s'		=>	\$input_param,
 			'output|o=s'	=>	\$output_param,
+			'channels|c=s'	=>	\$channels_param,
 			'debug'			=>	\$debug_param,
 			'help|?'		=>	\$help_param,
 			'version'		=>	\$version_param );
@@ -48,6 +49,7 @@ if ( $debug_param ) {
 	print "DEBUG: passed parameters:\n";
 	print "input_param: $input_param\n";
 	print "output_param: $output_param\n";
+	print "channels_param: $channels_param\n";
 	print "debug_param: $debug_param\n";
 	print "help_param: $help_param\n\n";
 }
@@ -64,6 +66,8 @@ if ( $help_param ) {
 	print "\tfile to process (required)\n";
 	print "--output <filename>\n";
 	print "\toptional, and doesn't do anything right now\n";
+	print "--channels <channelconfig>\n";
+	print "\toptional, defaults to \"L_R_C_LFE_LS_RS\"\n";
 	print "--help | -?\n";
 	print "\tdisplay this text\n";
 	print "--version\n";
@@ -74,23 +78,28 @@ if ( $help_param ) {
 # if no input file is specified, grab the first command line parameter and use that
 if ( $input_param eq undef ) { $input_param = $ARGV[0]; }
 
+if ( $channels_param eq undef ) { $channels_param = "L_R_C_LFE_LS_RS"; }
+
+@channels = split( '_', $channels_param );
+if ( $debug_param ) { print "DEBUG: channels: @channels\n"; }
+
 if ( $debug_param ) {
 	print "DEBUG: adjusted parameters:\n";
 	print "input_param: $input_param\n";
 	print "output_param: $output_param\n";
+	print "channels_param: $channels_param\n";
 	print "debug_param: $debug_param\n";
 	print "help_param: $help_param\n\n";
 }
 
 if ( $debug_param ) { print "DEBUG: opening input file $input_param\n"; }
 open( INPUT_FILE, "<", $input_param )
-	or die "Can't open input file $input_param\n";
+or die "Can't open input file $input_param\n";
+
+binmode( INPUT_FILE );
 
 $file_size = -s INPUT_FILE;
 if ( $debug_param ) { print "DEBUG: input file $input_param is $file_size bytes\n"; }
-
-### for now, just read enough and report the values of the various chunks
-
 
 # read the first twelve bytes of the file - this is the RIFF header
 read( INPUT_FILE, $header, 12 )
@@ -143,17 +152,69 @@ if ( $debug_param ) {
 	print "DEBUG: bits_per_sample: $bits_per_sample\n";
 }
 
-
 # go find the "data" chunk
 $sub_chunk_2_id = "data";
 $sub_chunk_2_size = find_chunk( $sub_chunk_2_id );
 if ( $sub_chunk_2_size eq 0 ) { die "Error: no data chunk\n"; }
 
+# confirm that this is a 6 channel WAVE file
 
-### start processing from here
+if ( $num_channels ne NUM_STREAMS ) {
+	print "ERROR: wrong number of channels found\n";
+	close( INPUT_FILE );
+	exit;
+}
 
+# create temp file names
+$base_name = $input_param;
+$base_name =~ s/\.(.*)$//;	# lop off everything from the last period on
+$extension = $1;				# use everything after the last period as the extension
+
+if ( $debug_param ) {
+	print "DEBUG: base_name: $base_name\n";
+	print "DEBUG: extension: $extension\n";
+}
+
+# load @temp_file_names array with each temp file name we're going to use
+for ( my $i = 0; $i < NUM_STREAMS; $i++ ) {
+	@temp_file_names[$i] = "$base_name" . "_" . @channels[$i] . ".tmp";
+}
+
+if ( $debug_param ) {
+	for ( my $i = 0; $i < NUM_STREAMS; $i++ ) {
+		print "DEBUG: temp file name ($i): @temp_file_names[$i]\n";
+	}
+}
+
+# open my temp files
+for ( my $i = 0; $i < NUM_STREAMS; $i++ ) {
+	open( my $fh, '>', @temp_file_names[$i] );		# open file $i
+	binmode( $fh );									# set to binary mode
+	@file_handles[$i] = $fh;						# put handle in file_handles array
+}
+
+# now...
+# calculate how many bytes per sample
+# calculate how many samples in the file
+# read, write, read, write, etc.
+
+### Basic steps
+###		open input file							DONE
+###		read/parse through the header			DONE
+###		confirm it is six channels				DONE
+###		queue file to start of audio data		DONE
+###		create six new raw pcm (temp) files		DONE
+###		de-interleave out to temp files
+###		wrap temp files to mono WAVE files
+###		delete temp files
+###
+###	all of these steps I've done in separate scripts before
+###	but I want to combine the functionality into one here
 
 close( INPUT_FILE );
+for ( my $i = 0; $i < NUM_STREAMS; $i++ ) {
+	close( @file_handles[$i] ) or warn "CAN'T CLOSE FILE @file_handles[$i]\n";
+}
 
 
 # subroutines
