@@ -177,7 +177,7 @@ if ( $debug_param ) {
 
 # load @temp_file_names array with each temp file name we're going to use
 for ( my $i = 0; $i < NUM_STREAMS; $i++ ) {
-	@temp_file_names[$i] = "$base_name" . "_" . @channels[$i] . ".tmp";
+	@temp_file_names[$i] = "$base_name" . "_" . @channels[$i] . ".wav";
 }
 
 if ( $debug_param ) {
@@ -193,8 +193,18 @@ for ( my $i = 0; $i < NUM_STREAMS; $i++ ) {
 	@file_handles[$i] = $fh;						# put handle in file_handles array
 }
 
+my $test_fh = @file_handles[0];
+
+output_header( $test_fh );
+
+print { @file_handles[1] } "test!\n";
+
+# can we pre-calculate the headers on these and write them, too?
+# that way, they don't have to be temp files
+
 # now...
 # calculate how many bytes per sample
+# 	$bits_per_sample / 8
 # calculate how many samples in the file
 # read, write, read, write, etc.
 
@@ -211,6 +221,10 @@ for ( my $i = 0; $i < NUM_STREAMS; $i++ ) {
 ###	all of these steps I've done in separate scripts before
 ###	but I want to combine the functionality into one here
 
+
+
+
+
 close( INPUT_FILE );
 for ( my $i = 0; $i < NUM_STREAMS; $i++ ) {
 	close( @file_handles[$i] ) or warn "CAN'T CLOSE FILE @file_handles[$i]\n";
@@ -218,6 +232,57 @@ for ( my $i = 0; $i < NUM_STREAMS; $i++ ) {
 
 
 # subroutines
+
+sub output_header {
+	print { $_[0] } "blahblahblah\n";
+	
+
+# 
+# # Calculate values of WAVE header
+# 
+# my ( $chunk_size, $sub_chunk_1_size, $audio_format, $num_channels );
+# my ( $sample_rate, $byte_rate, $block_align, $bits_per_sample );
+# my ( $wav_header );
+# 
+# $wav_header = "RIFF";
+# #  = remainder of file from this point
+# #  = lenth of sample data + size of fmt chunk + remainder of chunk descriptor
+# #  = will generally be sample data + 36 bytes
+# $chunk_size = $raw_size + 36;
+# # subChunk1Size is always 18 in Forge WAV files
+# #  but as far as I can tell, it only needs to be 16
+# #  why the two pad bytes?
+# $sub_chunk_1_size = 16;
+# $audio_format = 1;
+# $num_channels = $channel_param;
+# $sample_rate = $samplerate_param;
+# $bits_per_sample = $samplesize_param;
+# $block_align = ceil( $num_channels * int( $bits_per_sample / 8 ) );
+# $byte_rate = $sample_rate * $block_align;
+# 
+# # pack()
+# # first parameter determines type of data
+# # we will be using 'S' for unsigned short and 'L' for unsigned long
+# # actually we may need to use 's' for short and 'l' for long
+# 
+# print WAV_FILE "RIFF";
+# print WAV_FILE pack( 'L', $chunk_size );
+# print WAV_FILE "WAVE";
+# 
+# print WAV_FILE "fmt ";
+# print WAV_FILE pack( 'L', $sub_chunk_1_size );
+# print WAV_FILE pack( 'S', $audio_format );
+# print WAV_FILE pack( 'S', $num_channels );
+# print WAV_FILE pack( 'L', $sample_rate );
+# print WAV_FILE pack( 'L', $byte_rate );
+# print WAV_FILE pack( 'S', $block_align );
+# print WAV_FILE pack( 'S', $bits_per_sample );
+# 
+# print WAV_FILE "data";
+# print WAV_FILE pack( 'L', $raw_size );
+
+
+}
 
 sub find_chunk {
 	my $file_handle = $_[0];
