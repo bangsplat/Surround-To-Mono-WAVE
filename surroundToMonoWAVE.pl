@@ -93,8 +93,8 @@ if ( $debug_param ) { print "DEBUG: input file $input_param is $file_size bytes\
 read( INPUT_FILE, $header, 12 )
 or die "Error reading $input_param\n";
 
-## pack("L") is essentially the same as the old long_value() sub
-## pack("S") is the same as the old short_value() sub
+## unpack("L") is essentially the same as the old long_value() sub
+## unpack("S") is the same as the old short_value() sub
 
 $chunk_id = substr( $header, 0, 4 );
 $chunk_size = unpack( "L", substr( $header, 4, 4 ) );
@@ -111,77 +111,66 @@ if ( $debug_param ) {
 if ( ( $chunk_size + 8 ) ne $file_size ) { warn "Warning: ChunkSize is not correct\n"; }
 
 
+# go find the "fmt " chunk
 
+my ( $sub_chunk_1_id, $sub_chunk_1_size );
+my ( $audio_format, $num_channels, $sample_rate, $byte_rate, $block_align, $bits_per_sample );
+
+$sub_chunk_1_id = "fmt ";
+$sub_chunk_1_size = find_chunk( \*INPUT_FILE, $sub_chunk_1_id );
+
+if ( $debug_param ) { print "DEBUG: fmt  chunk size: $sub_chunk_1_size\n"; }
+
+if ( $sub_chunk_1_size eq 0 ) { die "ERROR: no fmt  chunk\n"; }
+
+# sub_chunk_1_size is the amount we need to read for the remainder of the fmt  sub chunk
+read( INPUT_FILE, $header, $sub_chunk_1_size )
+or die "Error reading $input_param\n";
+
+$audio_format = unpack( "S", substr( $header, 0, 2 ) );
+$num_channels = unpack( "S", substr( $header, 2, 2 ) );
+$sample_rate = unpack( "L", substr( $header, 4, 4 ) );
+$byte_rate = unpack( "L", substr( $header, 8, 4 ) );
+$block_align = unpack( "S", substr( $header, 12, 2 ) );
+$bits_per_sample = unpack( "S", substr( $header, 14, 2 ) );
+
+if ( $debug_param ) {
+	print "DEBUG: audio_format: $audio_format\n";
+	print "DEBUG: num_channels: $num_channels\n";
+	print "DEBUG: sample_rate: $sample_rate\n";
+	print "DEBUG: byte_rate: $byte_rate\n";
+	print "DEBUG: block_align: $block_align\n";
+	print "DEBUG: bits_per_sample: $bits_per_sample\n";
+}
 
 
 close( INPUT_FILE );
 
 
-# # Read 12 bytes (ChunkID, ChunkSize, Format)
-# read( INPUT_FILE, $header, 12 )
-# or die "Error reading $input_file\n";
-# 
-# $chunk_id = substr( $header, 0, 4 );
-# $chunk_size = long_value( substr( $header, 4, 4 ) );
-# $format = substr( $header, 8, 4 );
-# 
-# # ChunkID should be "RIFF"
-# if ( $chunk_id ne "RIFF" ) { die "Error: $input_file is not a WAVE file (no RIFF)\n"; }
-# 
-# # ChunkSize + 8 should equal the total file size
-# # if it doesn't match, we may have an Omneon-style too-big WAVE file
-# # go ahead and process anyway
-# if ( ( $chunk_size + 8) ne $file_size ) { warn "Warning: ChunkSize is not correct\n"; }
-# 
-# # Format should be "WAVE"
-# if ( $format ne "WAVE" ) { die "Error: $input_file is not a WAVE file (no WAVE)\n"; }
-# 
-# # Go find the fmt chunk
-# $sub_chunk_1_id = "fmt ";
-# $sub_chunk_1_size = find_chunk( $sub_chunk_1_id );
-# if ( $sub_chunk_1_size eq 0 ) { die "Error: no fmt chunk\n"; }
-# 
-# # Subchunk1Size is the amount we need to read for the remainder of the fmt sub chunk
-# read( INPUT_FILE, $header, $sub_chunk_1_size )
-# or die "Error reading $input_file\n";
-# 
-# $audio_format = short_value( substr( $header, 0, 2 ) );
-# $num_channels = short_value( substr( $header, 2, 2 ) );
-# $sample_rate = long_value( substr( $header, 4, 4 ) );
-# $byte_rate = long_value( substr( $header, 8, 4 ) );
-# $block_align = short_value( substr( $header, 12, 2 ) );
-# $bits_per_sample = short_value( substr( $header, 14, 2 ) );
+# subroutines
 
-
-
-
-
-
-
-sub short_value {
-	my $short_bytes = $_[0];
+sub find_chunk {
+	my $file_handle = $_[0];
+	my $find_chunk_id = $_[1];
+	my $done = 0;
+	my ( $result, $buffer, $result, $read_chunk_id, $read_chunk_size );
+	 
+	# assume that $file_handle is an open file
 	
-	my $first_byte = ord( substr( $short_bytes, 0, 1 ) );
-	my $second_byte = ord( substr( $short_bytes, 1, 1 ) );
+	seek( $file_handle, 12, 0 );		# skip past the end of the header
 	
-	my $short_value = $first_byte;
-	$short_value += $second_byte * 256;
-	
-	return $short_value;
-}
-
-sub long_value {
-	my $long_bytes = $_[0];
-	
-	my $first_byte = ord( substr( $long_bytes, 0, 1 ) );
-	my $second_byte = ord( substr( $long_bytes, 1, 1 ) );
-	my $third_byte = ord( substr( $long_bytes, 2, 1 ) );
-	my $fourth_byte = ord( substr( $long_bytes, 3, 1 ) );
-	
-	my $long_value = $first_byte;
-	$long_value += $second_byte * 256;
-	$long_value += $third_byte * 65536;
-	$long_value += $fourth_byte * 16777216;
-	
-	return $long_value;
+	while ( !$done ) {
+		$result = read( $file_handle, $buffer, 8 );		# read the header of the next chunk
+		if ( $result eq 0 ) {							# end of file
+			seek( $file_handle, 0, 0 );					# rewind file
+			return( 0 );								# return 0, which indicates an error
+		}
+		
+		# parse the next chunk info
+		$read_chunk_id = substr( $buffer, 0, 4 );
+		$read_chunk_size = unpack( "L", substr( $buffer, 4, 4 ) );
+		
+		if ( $read_chunk_id eq $find_chunk_id ) { return( $read_chunk_size ); }	# return the chunk size
+		else { seek( $file_handle, $read_chunk_size, 1 ); }						# seek to next chunk
+	}
 }
