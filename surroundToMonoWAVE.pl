@@ -32,6 +32,9 @@ use Getopt::Long;
 my ( $input_param, $output_param, $debug_param, $help_param, $version_param );
 my ( $file_size );
 my ( $header, $chunk_id, $chunk_size, $format );
+my ( $sub_chunk_1_id, $sub_chunk_1_size );
+my ( $audio_format, $num_channels, $sample_rate, $byte_rate, $block_align, $bits_per_sample );
+my ( $sub_chunk_2_id, $sub_chunk_2_size );
 
 #	get parameters
 
@@ -113,9 +116,6 @@ if ( ( $chunk_size + 8 ) ne $file_size ) { warn "Warning: ChunkSize is not corre
 
 # go find the "fmt " chunk
 
-my ( $sub_chunk_1_id, $sub_chunk_1_size );
-my ( $audio_format, $num_channels, $sample_rate, $byte_rate, $block_align, $bits_per_sample );
-
 $sub_chunk_1_id = "fmt ";
 $sub_chunk_1_size = find_chunk( \*INPUT_FILE, $sub_chunk_1_id );
 
@@ -142,6 +142,15 @@ if ( $debug_param ) {
 	print "DEBUG: block_align: $block_align\n";
 	print "DEBUG: bits_per_sample: $bits_per_sample\n";
 }
+
+
+# go find the "data" chunk
+$sub_chunk_2_id = "data";
+$sub_chunk_2_size = find_chunk( $sub_chunk_2_id );
+if ( $sub_chunk_2_size eq 0 ) { die "Error: no data chunk\n"; }
+
+
+### start processing from here
 
 
 close( INPUT_FILE );
