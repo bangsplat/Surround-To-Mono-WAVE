@@ -12,7 +12,6 @@
 
 use strict;
 use Getopt::Long;
-use Time::localtime;
 use POSIX;
 
 #	constants
@@ -30,13 +29,7 @@ my ( $sub_chunk_2_id, $sub_chunk_2_size );
 my ( @temp_file_names, @file_names, @file_handles );
 my ( $base_name, $extension );
 my ( $data_bytes_per_file, $samples_per_file );
-my @MONTHS = qw( 01 02 03 04 05 06 07 08 09 10 11 12 );
-my @DAYS = qw( 00 01 02 03 04 05 06 07 08 09 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31 );
-my @HOURS = qw( 00 01 02 03 04 05 06 07 08 09 10 11 12 13 14 15 16 17 18 19 20 21 22 23 );
-my @MINUTES = qw ( 00 01 02 03 04 05 06 07 08 09 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31 32 33 34 35 36 37 38 39 40 41 42 43 44 45 46 47 48 49 50 51 52 53 54 55 56 57 58 59 60 );
-my @SECONDS = qw( 00 01 02 03 04 05 06 07 08 09 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31 32 33 34 35 36 37 38 39 40 41 42 43 44 45 46 47 48 49 50 51 52 53 54 55 56 57 58 59 60 );
-
-my $temp_date = localtime()->year + 1900 . $MONTHS[localtime()->mon] . $DAYS[localtime()->mday] . $HOURS[localtime()->hour] . $MINUTES[localtime()->min] . $SECONDS[localtime()->sec];
+my $buffer;
 
 #	get parameters
 
@@ -206,23 +199,17 @@ for ( my $i = 0; $i < NUM_STREAMS; $i++ ) {
 # output a WAVE header into each file
 # each should be the same
 for ( my $i = 0; $i < NUM_STREAMS; $i++ ) {
-	output_header( @file_handles[0] );
+	output_header( @file_handles[$i] );
 }
 
-# now...
 # read, write, read, write, etc.
-
-# read $samples_per_file * NUM_STREAMS times
-# write $samples_per_file * NUM_STREAMS times
-
-### Basic steps
-###		open input file							DONE
-###		read/parse through the header			DONE
-###		confirm it is six channels				DONE
-###		queue file to start of audio data		DONE
-###		create six new WAVE files				DONE
-###		de-interleave out to WAVe files			
-
+my $p = 0;
+for ( my $s = 0; $s < ( $samples_per_file * NUM_STREAMS ); $s++ ) {
+	read( INPUT_FILE, $buffer, $bits_per_sample/8 );
+	print { @file_handles[$p] } $buffer;
+	
+	if ( ++$p > 5 ) { $p = 0; }
+}
 
 close( INPUT_FILE );
 for ( my $i = 0; $i < NUM_STREAMS; $i++ ) {
@@ -249,7 +236,8 @@ sub output_header {
 	#	apparently there is an obscure Microsoft document that says
 	# 	it shall be block aligned such that it shall be 18
 	$output_sub_chunk_1_size = 16;
-	$output_audio_format = $audio_format;
+#	$output_audio_format = $audio_format;
+	$output_audio_format = 1;
 	$output_num_channels = 1;
 	$output_sample_rate = $sample_rate;
 	$output_bits_per_sample = $bits_per_sample;
